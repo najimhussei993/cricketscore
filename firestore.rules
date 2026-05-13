@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isOwner(ownerId) { return isSignedIn() && request.auth.uid == ownerId; }
+
+    // --- User Validation ---
+    function isValidUser(data) {
+      return data.uid == request.auth.uid
+        && data.createdAt is int
+        && data.keys().hasAll(['uid', 'createdAt'])
+        && data.keys().size() <= 5; // Support displayName, email, photoURL
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId));
+      allow create: if isSignedIn() && isValidUser(incoming());
+      allow update: if isSignedIn() && isOwner(userId) && isValidUser(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt;
+    }
+
+    // --- Match Validation ---
+    function isValidMatch(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.ownerId == request.auth.uid
+        && data.status in ['setup', 'live', 'completed']
+        && data.createdAt is int
+        && data.updatedAt is int
+        && data.teamA is map
+        && data.teamB is map
+        && data.settings is map
+        && data.innings is list
+        && data.innings.size() == 2
+        && data.keys().hasAll(['id', 'ownerId', 'status', 'createdAt', 'updatedAt', 'teamA', 'teamB', 'settings', 'innings'])
+        && data.keys().size() <= 12; // Flexible for optional fields like winnerTeamId
+    }
+
+    match /matches/{matchId} {
+      // Allow read if signed in (matches can be shared)
+      // Hardened: Only owner can list, but anyone can GET if they have the ID (shared link)
+      allow get: if isSignedIn(); 
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      
+      allow create: if isSignedIn() && isValidMatch(incoming()) 
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() && isOwner(existing().ownerId) 
+        && isValidMatch(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Start Match
+          (existing().status == 'setup' && incoming().status == 'live' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+          // Action: Score Ball
+          (existing().status == 'live' && incoming().status == 'live' && incoming().diff(existing()).affectedKeys().hasOnly(['innings', 'currentInningsIndex', 'updatedAt'])) ||
+          // Action: Finish Match
+          (existing().status == 'live' && incoming().status == 'completed' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'winnerTeamId', 'manOfTheMatchId', 'updatedAt'])) ||
+          // Generic update (e.g. editing teams in setup)
+          (existing().status == 'setup' && incoming().status == 'setup')
+        );
+
+      allow delete: if isSignedIn() && isOwner(existing().ownerId);
+    }
+  }
+}

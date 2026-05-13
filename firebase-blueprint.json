@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "Match": {
+      "title": "Match",
+      "description": "Represents a cricket match and its full state including innings and balls.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "teamA": { "type": "object" },
+        "teamB": { "type": "object" },
+        "settings": { "type": "object" },
+        "innings": { "type": "array" },
+        "currentInningsIndex": { "type": "number" },
+        "status": { "type": "string", "enum": ["setup", "live", "completed"] },
+        "winnerTeamId": { "type": "string" },
+        "manOfTheMatchId": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "ownerId": { "type": "string", "description": "The UID of the user who created the match." }
+      },
+      "required": ["id", "teamA", "teamB", "settings", "innings", "currentInningsIndex", "status", "createdAt", "updatedAt", "ownerId"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["uid", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/matches/{matchId}": {
+      "schema": "Match",
+      "description": "Main collection for cricket matches."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles."
+    }
+  }
+}
